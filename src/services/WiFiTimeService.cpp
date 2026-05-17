@@ -4,10 +4,10 @@
 
 // ─── public ──────────────────────────────────────────────────────────────────
 
-bool WiFiTimeService::begin(const char* ssid, const char* password) {
+bool WiFiTimeService::begin(const char* ssid, const char* password, ProgressCallback onProgress) {
   Serial.println("[WiFiTime] Connecting to WiFi...");
 
-  if (!connectWiFi(ssid, password)) {
+  if (!connectWiFi(ssid, password, onProgress)) {
     Serial.println("[WiFiTime] WiFi connection failed — falling back to compile-time seed.");
     return false;
   }
@@ -61,7 +61,7 @@ ClockSnapshot WiFiTimeService::snapshotNow() const {
 
 // ─── private ─────────────────────────────────────────────────────────────────
 
-bool WiFiTimeService::connectWiFi(const char* ssid, const char* password) {
+bool WiFiTimeService::connectWiFi(const char* ssid, const char* password, ProgressCallback onProgress) {
   if (ssid == nullptr || ssid[0] == '\0') {
     Serial.println("[WiFiTime] No SSID configured — skipping WiFi.");
     return false;
@@ -70,15 +70,24 @@ bool WiFiTimeService::connectWiFi(const char* ssid, const char* password) {
 
   for (uint8_t attempt = 0; attempt < kWifiMaxConnectAttempts; ++attempt) {
     status_ = WiFiStatus::Connecting;
+    if (onProgress != nullptr) {
+      onProgress(status_);
+    }
     Serial.print("[WiFiTime] Connecting to WiFi (attempt ");
     Serial.print(attempt + 1);
     Serial.println(")...");
+    Serial.print("[WiFiTime] Attempting to connect to SSID: ");
+    Serial.println(ssid);
+    Serial.print(password );
 
     WiFi.begin(ssid, password);
 
     const uint32_t deadline = millis() + kWifiConnectTimeoutMs;
     while (WiFi.status() != WL_CONNECTED && millis() < deadline) {
       delay(250);
+      if (onProgress != nullptr) {
+        onProgress(status_);
+      }
       Serial.print('.');
     }
     Serial.println();
@@ -87,6 +96,9 @@ bool WiFiTimeService::connectWiFi(const char* ssid, const char* password) {
       Serial.print("[WiFiTime] Connected — IP: ");
       Serial.println(WiFi.localIP());
       status_ = WiFiStatus::Connected;
+      if (onProgress != nullptr) {
+        onProgress(status_);
+      }
       return true;
     }
 
@@ -102,6 +114,9 @@ bool WiFiTimeService::connectWiFi(const char* ssid, const char* password) {
   }
 
   status_ = WiFiStatus::Disconnected;
+  if (onProgress != nullptr) {
+    onProgress(status_);
+  }
   return false;
 }
 

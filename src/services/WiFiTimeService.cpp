@@ -66,27 +66,51 @@ bool WiFiTimeService::connectWiFi(const char* ssid, const char* password) {
     Serial.println("[WiFiTime] No SSID configured — skipping WiFi.");
     return false;
   }
-
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
 
-  const uint32_t deadline = millis() + kNtpTimeoutMs;
-  while (WiFi.status() != WL_CONNECTED && millis() < deadline) {
-    delay(250);
-    Serial.print('.');
+  for (uint8_t attempt = 0; attempt < kWifiMaxConnectAttempts; ++attempt) {
+    status_ = WiFiStatus::Connecting;
+    Serial.print("[WiFiTime] Connecting to WiFi (attempt ");
+    Serial.print(attempt + 1);
+    Serial.println(")...");
+
+    WiFi.begin(ssid, password);
+
+    const uint32_t deadline = millis() + kWifiConnectTimeoutMs;
+    while (WiFi.status() != WL_CONNECTED && millis() < deadline) {
+      delay(250);
+      Serial.print('.');
+    }
+    Serial.println();
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.print("[WiFiTime] Connected — IP: ");
+      Serial.println(WiFi.localIP());
+      status_ = WiFiStatus::Connected;
+      return true;
+    }
+
+    Serial.println("[WiFiTime] Connect attempt failed.");
+    WiFi.disconnect(true);
+
+    // Exponential backoff before next attempt
+    uint32_t backoff = kWifiInitialBackoffMs * (1U << attempt);
+    if (backoff > 5000U) {
+      backoff = 5000U;
+    }
+    delay(backoff);
   }
-  Serial.println();
 
-  if (WiFi.status() != WL_CONNECTED) {
-    return false;
-  }
-
-  Serial.print("[WiFiTime] Connected — IP: ");
-  Serial.println(WiFi.localIP());
-  return true;
+  status_ = WiFiStatus::Disconnected;
+  return false;
 }
 
 bool WiFiTimeService::syncNTP() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WiFiTime] Cannot sync NTP — WiFi not connected.");
+    return false;
+  }
+
   configTime(kGmtOffsetSec, kDaylightOffsetSec, kNtpServer1, kNtpServer2);
 
   Serial.print("[WiFiTime] Waiting for NTP sync");

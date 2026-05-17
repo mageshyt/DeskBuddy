@@ -1,7 +1,36 @@
 #include "services/ClockService.h"
 
 void ClockService::begin(const ClockSnapshot &seed) {
-  seed_ = seed;
+  // Validate and normalize incoming seed to avoid undefined time calculations.
+  ClockSnapshot normalized = seed;
+
+  if (normalized.year < 1970U) {
+    normalized.year = 1970U;
+  }
+  if (normalized.month < 1U) {
+    normalized.month = 1U;
+  } else if (normalized.month > 12U) {
+    normalized.month = 12U;
+  }
+
+  const uint8_t dim = daysInMonth(normalized.year, normalized.month);
+  if (normalized.day < 1U) {
+    normalized.day = 1U;
+  } else if (normalized.day > dim) {
+    normalized.day = dim;
+  }
+
+  if (normalized.hour > 23U) {
+    normalized.hour = 0U;
+  }
+  if (normalized.minute > 59U) {
+    normalized.minute = 0U;
+  }
+  if (normalized.second > 59U) {
+    normalized.second = 0U;
+  }
+
+  seed_ = normalized;
   startMillis_ = millis();
 }
 
@@ -56,11 +85,14 @@ bool ClockService::isLeapYear(uint16_t year) {
 
 uint8_t ClockService::daysInMonth(uint16_t year, uint8_t month) {
   static const uint8_t kDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month < 1) {
+    month = 1;
+  } else if (month > 12) {
+    month = 12;
+  }
+
   if (month == 2 && isLeapYear(year)) {
     return 29;
-  }
-  if (month < 1 || month > 12) {
-    return 30;
   }
   return kDays[month - 1];
 }

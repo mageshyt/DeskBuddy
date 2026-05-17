@@ -4,6 +4,8 @@
 #include "config.h"
 #include "models/DashboardState.h"
 #include "services/ClockService.h"
+#include "services/SyncRestService.h"
+#include "services/SyncSocketService.h"
 #include "services/WiFiTimeService.h"
 #include "ui/MainDashboardScreen.h"
 
@@ -12,6 +14,8 @@ const char *const kMonthNames[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Ju
 
 TFT_eSPI tft;
 ClockService clockService;
+SyncRestService restSync;
+SyncSocketService syncSocket;
 WiFiTimeService wifiTime;
 MainDashboardScreen dashboard(tft);
 
@@ -19,9 +23,12 @@ DashboardState state{};
 
 uint32_t lastRenderMs = 0;
 uint32_t lastFocusMinuteMs = 0;
+uint32_t lastSummaryMs = 0;
 
 const uint32_t RENDER_INTERVAL_MS = 120;
 const uint32_t FOCUS_TICK_MS = 60000;
+const uint32_t SUMMARY_REFRESH_MS = 30000;
+
 
 uint8_t monthFromAbbrev(const char *abbr) {
   for (uint8_t i = 0; i < 12; i++) {
@@ -142,8 +149,13 @@ void setup() {
 
   initializeDemoState();
 
+  // Seed the clock before WiFi connect.
+  ClockSnapshot seed = buildClockSeed();
+  clockService.begin(seed);
+  state.clock = clockService.now();
+  dashboard.render(state, true);
+
   // Try to get accurate time via NTP; fall back to compile-time seed if unavailable.
-  ClockSnapshot seed;
   if (wifiTime.begin(kWifiSSID, kWifiPassword) && wifiTime.isSynced()) {
     seed = wifiTime.snapshotNow();
     Serial.println("[Main] Using NTP time.");
@@ -152,10 +164,12 @@ void setup() {
     Serial.println("[Main] Using compile-time fallback seed.");
   }
   clockService.begin(seed);
-
-  dashboard.setSystemStatus(true);
   state.clock = clockService.now();
   dashboard.render(state, true);
+
+  restSync.begin(kSyncServerHost, kSyncServerPort);
+  restSync.fetchSummary(state.tasks, state.habits);
+  syncSocket.begin(kSyncServerHost, kSyncServerPort, kDeviceFirmwareVersion);
 
   Serial.println("DeskBuddy main screen ready");
   Serial.println("Controls: f=focus, +=task up, -=task down, h=habit up, j=habit down");
@@ -168,6 +182,16 @@ void loop() {
   // Periodic NTP re-sync (every 6 hours) to correct millis() drift.
   wifiTime.tick();
 
+  // WebSocket sync heartbeat and status updates
+  syncSocket.tick();
+
+  const uint32_t now = millis();
+  if ((now - lastSummaryMs) >= SUMMARY_REFRESH_MS) {
+    lastSummaryMs = now;
+    restSync.fetchSummary(state.tasks, state.habits);
+  }
+
+
   // After a re-sync, re-seed the clock service with fresh NTP time.
   static bool lastSynced = false;
   if (wifiTime.isSynced() && !lastSynced) {
@@ -177,7 +201,6 @@ void loop() {
 
   state.clock = clockService.now();
 
-  const uint32_t now = millis();
   if ((now - lastRenderMs) >= RENDER_INTERVAL_MS) {
     lastRenderMs = now;
     dashboard.render(state);

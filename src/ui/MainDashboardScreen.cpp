@@ -51,10 +51,6 @@ void drawCenteredText(TFT_eSPI &tft, const char *text, int16_t centerX, int16_t 
 
 MainDashboardScreen::MainDashboardScreen(TFT_eSPI &tft) : tft_(tft) {}
 
-void MainDashboardScreen::setSystemStatus(::WiFiTimeService::WiFiStatus wifiStatus) {
-  wifiStatus_ = wifiStatus;
-}
-
 bool MainDashboardScreen::shouldRedraw(const DashboardState &state, bool forceRedraw) const {
   if (forceRedraw || !hasLastState_) {
     return true;
@@ -70,9 +66,6 @@ bool MainDashboardScreen::shouldRedraw(const DashboardState &state, bool forceRe
     return true;
   }
   if (state.focusRunning != lastState_.focusRunning || state.focusMinutesRemaining != lastState_.focusMinutesRemaining) {
-    return true;
-  }
-  if (wifiStatus_ != lastWifiStatus_) {
     return true;
   }
   return false;
@@ -93,7 +86,6 @@ void MainDashboardScreen::render(const DashboardState &state, bool forceRedraw) 
 
     lastState_ = state;
     hasLastState_ = true;
-    lastWifiStatus_ = wifiStatus_;
     return;
   }
 
@@ -103,22 +95,8 @@ void MainDashboardScreen::render(const DashboardState &state, bool forceRedraw) 
   const bool focusChanged =
       (state.focusRunning != lastState_.focusRunning) || (state.focusMinutesRemaining != lastState_.focusMinutesRemaining);
 
-  const bool wifiChanged = (wifiStatus_ != lastWifiStatus_);
-
-  // If connecting, request redraw every frame for animation
-  if (wifiStatus_ == ::WiFiTimeService::WiFiStatus::Connecting) {
-    // force redraw of the top area every render tick
-    drawTopTimeCardFrame();
-    drawTopTimeDynamic(state);
-  }
 
   if (clockChanged) {
-    drawTopTimeDynamic(state);
-  }
-  if (wifiChanged) {
-    // WiFi icon lives in the top card frame; redraw the frame to update the icon.
-    drawTopTimeCardFrame();
-    // Also redraw dynamic time area in case the frame overwrote parts of it.
     drawTopTimeDynamic(state);
   }
   if (tasksChanged || habitsChanged || focusChanged) {
@@ -127,7 +105,6 @@ void MainDashboardScreen::render(const DashboardState &state, bool forceRedraw) 
 
   lastState_ = state;
   hasLastState_ = true;
-  lastWifiStatus_ = wifiStatus_;
 }
 
 void MainDashboardScreen::drawBackground() const {
@@ -163,7 +140,7 @@ void MainDashboardScreen::drawTopTimeCardFrame() const {
   tft_.setCursor(x + 10, y + 10);
   tft_.print("CURRENT TIME");
 
-  drawWifiIcon(x + w - 24, y + 10, accent, wifiStatus_);
+  // WiFi icon removed.
 }
 
 void MainDashboardScreen::drawTopTimeDynamic(const DashboardState &state) const {
@@ -312,32 +289,6 @@ void MainDashboardScreen::drawBottomCardsDynamic(const DashboardState &state) co
   }
 }
 
-void MainDashboardScreen::drawWifiIcon(int16_t x, int16_t y, uint16_t color,
-                                      ::WiFiTimeService::WiFiStatus status) const {
-  const uint16_t dotColor = status == ::WiFiTimeService::WiFiStatus::Connected ? color : rgb(tft_, 200, 200, 200);
-
-  if (status == ::WiFiTimeService::WiFiStatus::Disconnected) {
-    tft_.drawLine(x - 2, y + 10, x + 14, y - 2, dotColor);
-    tft_.drawLine(x - 1, y + 10, x + 15, y - 2, dotColor);
-    return;
-  }
-
-  // When connecting, animate by drawing a rotating set of dots/arcs.
-  if (status == ::WiFiTimeService::WiFiStatus::Connecting) {
-    const uint32_t phase = (millis() / 200) % 3;  // 3-frame animation
-    for (int i = 0; i < 3; ++i) {
-      const int16_t dx = x + 6 + (i - 1) * 4;
-      const uint16_t c = (i == static_cast<int>(phase)) ? color : rgb(tft_, 120, 120, 120);
-      tft_.fillCircle(dx, y + 10, 2, c);
-    }
-    return;
-  }
-
-  // Connected: draw standard WiFi arcs
-  tft_.drawArc(x + 6, y + 10, 8, 6, 210, 330, color, color, false);
-  tft_.drawArc(x + 6, y + 10, 5, 3, 220, 320, color, color, false);
-  tft_.fillCircle(x + 6, y + 10, 1, color);
-}
 
 void MainDashboardScreen::drawTaskIcon(int16_t x, int16_t y, uint16_t color) const {
   tft_.drawRoundRect(x, y + 2, 24, 28, 2, color);

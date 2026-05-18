@@ -69,14 +69,17 @@ bool SyncRestService::parseSummary(const String& payload, DashboardProgress& tas
 
   const JsonVariant tasksNode = doc["tasks"];
   const JsonVariant habitsNode = doc["habits"];
-  if (!tasksNode.is<JsonObject>() || !habitsNode.is<JsonObject>()) {
+  if (!tasksNode.is<JsonObject>()) {
     return false;
   }
 
   tasks.completed = tasksNode["completed"].as<uint8_t>();
   tasks.total = tasksNode["total"].as<uint8_t>();
-  habits.completed = habitsNode["completed"].as<uint8_t>();
-  habits.total = habitsNode["total"].as<uint8_t>();
+
+  if (habitsNode.is<JsonObject>()) {
+    habits.completed = habitsNode["completed"].as<uint8_t>();
+    habits.total = habitsNode["total"].as<uint8_t>();
+  }
 
   return true;
 }

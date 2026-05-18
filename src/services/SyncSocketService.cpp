@@ -1,5 +1,6 @@
 #include "services/SyncSocketService.h"
 
+#include <ArduinoJson.h>
 #include <WiFi.h>
 
 void SyncSocketService::begin(const char* host, uint16_t port, const char* firmwareVersion) {
@@ -45,9 +46,6 @@ void SyncSocketService::tick() {
 }
 
 void SyncSocketService::onEvent(WStype_t type, uint8_t* payload, size_t length) {
-  (void)payload;
-  (void)length;
-
   switch (type) {
     case WStype_CONNECTED:
       connected_ = true;
@@ -61,9 +59,33 @@ void SyncSocketService::onEvent(WStype_t type, uint8_t* payload, size_t length) 
         sendStatus(false);
       }
       break;
+    case WStype_TEXT: {
+      StaticJsonDocument<256> doc;
+      const DeserializationError error = deserializeJson(doc, payload, length);
+      if (error) {
+        break;
+      }
+
+      const char* typeValue = doc["type"] | "";
+      if (strcmp(typeValue, "task:created") == 0 ||
+          strcmp(typeValue, "task:updated") == 0 ||
+          strcmp(typeValue, "task:deleted") == 0) {
+        summaryRefreshPending_ = true;
+      }
+      break;
+    }
     default:
       break;
   }
+}
+
+bool SyncSocketService::consumeSummaryRefresh() {
+  if (!summaryRefreshPending_) {
+    return false;
+  }
+
+  summaryRefreshPending_ = false;
+  return true;
 }
 
 void SyncSocketService::sendStatus(bool connected) {

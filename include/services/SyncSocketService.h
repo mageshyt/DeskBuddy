@@ -8,6 +8,7 @@ class SyncSocketService {
   void begin(const char* host, uint16_t port, const char* firmwareVersion);
   void tick();
   bool isConnected() const { return connected_; }
+  bool consumeSummaryRefresh();
 
  private:
   void sendStatus(bool connected);
@@ -20,6 +21,7 @@ class SyncSocketService {
   uint32_t lastHeartbeatMs_ = 0;
   uint32_t nextReconnectMs_ = 0;
   uint32_t reconnectBackoffMs_ = 3000U;
+  bool summaryRefreshPending_ = false;
   const char* host_ = nullptr;
   uint16_t port_ = 0U;
   static constexpr uint32_t kHeartbeatIntervalMs = 10000U;

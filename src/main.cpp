@@ -186,6 +186,12 @@ void loop() {
   syncSocket.tick();
 
   const uint32_t now = millis();
+
+  if (syncSocket.consumeSummaryRefresh()) {
+    if (restSync.fetchSummary(state.tasks, state.habits)) {
+      lastSummaryMs = now;
+    }
+  }
   if ((now - lastSummaryMs) >= SUMMARY_REFRESH_MS) {
     lastSummaryMs = now;
     restSync.fetchSummary(state.tasks, state.habits);

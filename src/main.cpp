@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
+#include <ESPmDNS.h>
 
 #include "config.h"
 #include "models/DashboardState.h"
@@ -10,7 +11,12 @@
 #include "services/SyncRestService.h"
 #include "services/SyncSocketService.h"
 #include "services/WiFiTimeService.h"
+#include "services/NavigationService.h"
+#include "services/InputService.h"
 #include "ui/MainDashboardScreen.h"
+#include "ui/PomodoroScreen.h"
+#include "ui/TasksScreen.h"
+#include "ui/HabitsScreen.h"
 
 namespace {
 const char *const kMonthNames[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -21,9 +27,16 @@ ClockService clockService;
 SyncRestService restSync;
 SyncSocketService syncSocket;
 WiFiTimeService wifiTime;
-MainDashboardScreen dashboard(tft);
 
 DashboardState state{};
+
+MainDashboardScreen dashboard(tft, state);
+PomodoroScreen pomodoroScreen(tft, state);
+TasksScreen tasksScreen(tft, state);
+HabitsScreen habitsScreen(tft, state);
+
+NavigationService navigationService;
+InputService inputService(navigationService);
 
 uint32_t lastRenderMs = 0;
 uint32_t lastFocusMinuteMs = 0;
@@ -169,13 +182,21 @@ void setup() {
   tft.init();
   tft.setRotation(1);
 
+  // Register screens with navigation service
+  navigationService.registerScreen(&dashboard);
+  navigationService.registerScreen(&pomodoroScreen);
+  navigationService.registerScreen(&tasksScreen);
+  navigationService.registerScreen(&habitsScreen);
+
   initializeDemoState();
 
   // Seed the clock before WiFi connect.
   ClockSnapshot seed = buildClockSeed();
   clockService.begin(seed);
   state.clock = clockService.now();
-  dashboard.render(state, true);
+  
+  // Set default active screen (triggers initial render of dashboard)
+  navigationService.navigateTo(&dashboard);
 
   // Try to get accurate time via NTP; fall back to compile-time seed if unavailable.
   if (wifiTime.begin(kWifiSSID, kWifiPassword) && wifiTime.isSynced()) {
@@ -187,21 +208,32 @@ void setup() {
   }
   clockService.begin(seed);
   state.clock = clockService.now();
-  dashboard.render(state, true);
 
-    Wire.begin(kOledSdaPin, kOledSclPin);
-    if (oled.begin(kOledAddressPrimary, true)) {
-      Serial.printf("[OLED] Ready at 0x%02X\n", kOledAddressPrimary);
-      oledReady = true;
-    } else if (oled.begin(kOledAddressSecondary, true)) {
-      Serial.printf("[OLED] Ready at 0x%02X\n", kOledAddressSecondary);
-      oledReady = true;
-    } else {
-      Serial.println("[OLED] init failed");
-    }
-    if (oledReady) {
-      renderOledMessage("Waiting for ws...");
-    }
+  // Start mDNS so the ESP32 can resolve .local hostnames (e.g. magesh.local)
+  if (!MDNS.begin("deskbuddy")) {
+    Serial.println("[Main] mDNS failed to start");
+  } else {
+    Serial.println("[Main] mDNS started — can resolve .local hostnames");
+  }
+
+  Wire.begin(kOledSdaPin, kOledSclPin);
+  if (oled.begin(kOledAddressPrimary, true)) {
+    Serial.printf("[OLED] Ready at 0x%02X\n", kOledAddressPrimary);
+    oledReady = true;
+  } else if (oled.begin(kOledAddressSecondary, true)) {
+    Serial.printf("[OLED] Ready at 0x%02X\n", kOledAddressSecondary);
+    oledReady = true;
+  } else {
+    Serial.println("[OLED] init failed");
+  }
+  if (oledReady) {
+    renderOledMessage("Waiting for ws...");
+  }
+
+  // Initialize hardware inputs via InputService after Wire (I2C) is ready
+  if (!inputService.begin()) {
+    Serial.println("[Main] InputService failed to initialize!");
+  }
 
   restSync.begin(kSyncServerHost, kSyncServerPort);
   restSync.fetchSummary(state.tasks, state.habits);
@@ -212,6 +244,9 @@ void setup() {
 }
 
 void loop() {
+  // Poll hardware buttons and encoder
+  inputService.tick();
+
   handleSerialInput();
   updateFocusTimer();
 
@@ -246,8 +281,6 @@ void loop() {
 
   state.clock = clockService.now();
 
-  if ((now - lastRenderMs) >= RENDER_INTERVAL_MS) {
-    lastRenderMs = now;
-    dashboard.render(state);
-  }
+  // Tick the active screen's update and rendering loop
+  navigationService.loop();
 }

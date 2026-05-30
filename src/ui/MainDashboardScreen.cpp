@@ -49,7 +49,30 @@ void drawCenteredText(TFT_eSPI &tft, const char *text, int16_t centerX, int16_t 
 }
 }  // namespace
 
-MainDashboardScreen::MainDashboardScreen(TFT_eSPI &tft) : tft_(tft) {}
+MainDashboardScreen::MainDashboardScreen(TFT_eSPI &tft, const DashboardState &state) 
+    : tft_(tft), state_(state) {}
+
+void MainDashboardScreen::onEnter() {
+  isActive_ = true;
+  Serial.println("[DashboardScreen] onEnter - Rendering initial frame");
+  render(state_, true); // Force full redraw when screen becomes active
+}
+
+void MainDashboardScreen::onExit() {
+  isActive_ = false;
+  Serial.println("[DashboardScreen] onExit");
+}
+
+bool MainDashboardScreen::handleInput(InputEvent event) {
+  // Return false to let NavigationService handle global page switching (DPAD_LEFT / DPAD_RIGHT)
+  return false;
+}
+
+void MainDashboardScreen::loop() {
+  if (isActive_) {
+    render(state_);
+  }
+}
 
 bool MainDashboardScreen::shouldRedraw(const DashboardState &state, bool forceRedraw) const {
   if (forceRedraw || !hasLastState_) {

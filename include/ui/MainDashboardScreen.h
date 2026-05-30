@@ -1,19 +1,27 @@
 #pragma once
 
 #include <TFT_eSPI.h>
-
+#include "interfaces/IScreen.h"
 #include "models/DashboardState.h"
 
-class MainDashboardScreen {
+class MainDashboardScreen : public IScreen {
  public:
-  explicit MainDashboardScreen(TFT_eSPI &tft);
+  MainDashboardScreen(TFT_eSPI &tft, const DashboardState &state);
+
+  // IScreen interface overrides
+  void onEnter() override;
+  void onExit() override;
+  bool handleInput(InputEvent event) override;
+  void loop() override;
 
   void render(const DashboardState &state, bool forceRedraw = false);
 
  private:
   TFT_eSPI &tft_;
+  const DashboardState &state_;
   bool hasLastState_ = false;
   DashboardState lastState_{};
+  bool isActive_ = false;
 
   void drawBackground() const;
   void drawTopTimeCardFrame() const;

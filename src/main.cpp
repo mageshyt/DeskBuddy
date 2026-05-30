@@ -145,6 +145,11 @@ void handleSerialInput() {
           state.habits.completed--;
         }
         break;
+      case 'q':
+      case 'Q':
+        localSync.clearQueue();
+        Serial.println("[Main] Cleared sync queue via Serial console command.");
+        break;
       default:
         break;
     }

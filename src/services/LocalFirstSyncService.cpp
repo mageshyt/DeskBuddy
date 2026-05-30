@@ -287,20 +287,36 @@ bool LocalFirstSyncService::loadQueue() {
   
   JsonArray arr = doc.as<JsonArray>();
   queueSize_ = 0;
+  bool queueModified = false;
   
   for (JsonObject obj : arr) {
     if (queueSize_ >= kMaxEvents) break;
     
+    String uuid = obj["uuid"].as<String>();
+    String dependsOn = obj["dependsOn"].as<String>();
+    
+    // Purge any corrupted events from the old random seed bug
+    if (uuid == "c-00000000" || dependsOn == "c-00000000") {
+      Serial.printf("[Sync] Purging corrupted event %s (depends: %s) from old firmware bug.\n", 
+                    uuid.c_str(), dependsOn.c_str());
+      queueModified = true;
+      continue;
+    }
+    
     SyncEvent ev;
-    ev.uuid = obj["uuid"].as<String>();
+    ev.uuid = uuid;
     ev.method = obj["method"].as<String>();
     ev.url = obj["url"].as<String>();
     ev.payload = obj["payload"].as<String>();
-    ev.dependsOnUuid = obj["dependsOn"].as<String>();
+    ev.dependsOnUuid = dependsOn;
     ev.retries = obj["retries"] | 0;
     ev.nextRetryMs = millis(); // Reset retry timers on boot to try immediately
     
     queue_[queueSize_++] = ev;
+  }
+  
+  if (queueModified) {
+    saveQueue();
   }
   
   return true;
@@ -352,8 +368,9 @@ void LocalFirstSyncService::discardDependentEvents(const String& uuid) {
 }
 
 bool LocalFirstSyncService::isUuidInQueue(const String& uuid) const {
-  for (size_t i = 0; i < queueSize_; ++i) {
-    if (queue_[i].uuid == uuid) {
+  // Start from index 1 to avoid matching the current event at queue_[0] against itself
+  for (size_t i = 1; i < queueSize_; ++i) {
+    if (queue_[i].uuid == uuid && queue_[i].method == "POST") {
       return true;
     }
   }

@@ -51,15 +51,23 @@ void SyncSocketService::onEvent(WStype_t type, uint8_t* payload, size_t length) 
       connected_ = true;
       lastHeartbeatMs_ = millis();
       reconnectBackoffMs_ = 3000U;
+      Serial.printf("[ws] connected to %s:%u\n", host_ ? host_ : "(null)", port_);
       sendStatus(true);
       break;
     case WStype_DISCONNECTED:
       if (connected_) {
         connected_ = false;
+        Serial.println("[ws] disconnected");
         sendStatus(false);
       }
       break;
     case WStype_TEXT: {
+      char raw[256];
+      const size_t copyLen = min(length, sizeof(raw) - 1);
+      memcpy(raw, payload, copyLen);
+      raw[copyLen] = '\0';
+      Serial.printf("[ws] rx: %s\n", raw);
+
       StaticJsonDocument<256> doc;
       const DeserializationError error = deserializeJson(doc, payload, length);
       if (error) {
@@ -67,10 +75,19 @@ void SyncSocketService::onEvent(WStype_t type, uint8_t* payload, size_t length) 
       }
 
       const char* typeValue = doc["type"] | "";
+      Serial.printf("[ws] event: %s\n", typeValue);
       if (strcmp(typeValue, "task:created") == 0 ||
           strcmp(typeValue, "task:updated") == 0 ||
           strcmp(typeValue, "task:deleted") == 0) {
         summaryRefreshPending_ = true;
+      }
+      if (strcmp(typeValue, "test:event") == 0) {
+        const char* message = doc["payload"]["message"] | "";
+        if (message[0] != '\0') {
+          Serial.printf("[ws] test:event message: %s\n", message);
+          snprintf(lastTestMessage_, sizeof(lastTestMessage_), "%s", message);
+          testMessagePending_ = true;
+        }
       }
       break;
     }
@@ -85,6 +102,16 @@ bool SyncSocketService::consumeSummaryRefresh() {
   }
 
   summaryRefreshPending_ = false;
+  return true;
+}
+
+bool SyncSocketService::consumeTestMessage(char* buffer, size_t bufferSize) {
+  if (!testMessagePending_ || bufferSize == 0) {
+    return false;
+  }
+
+  snprintf(buffer, bufferSize, "%s", lastTestMessage_);
+  testMessagePending_ = false;
   return true;
 }
 

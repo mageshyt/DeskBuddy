@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
 
 #include "config.h"
 #include "models/DashboardState.h"
@@ -13,6 +16,7 @@ namespace {
 const char *const kMonthNames[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 TFT_eSPI tft;
+Adafruit_SH1106G oled(128, 64, &Wire, -1);
 ClockService clockService;
 SyncRestService restSync;
 SyncSocketService syncSocket;
@@ -24,6 +28,9 @@ DashboardState state{};
 uint32_t lastRenderMs = 0;
 uint32_t lastFocusMinuteMs = 0;
 uint32_t lastSummaryMs = 0;
+
+bool oledReady = false;
+char oledMessage[96] = {0};
 
 const uint32_t RENDER_INTERVAL_MS = 120;
 const uint32_t FOCUS_TICK_MS = 60000;
@@ -139,6 +146,21 @@ void handleSerialInput() {
     }
   }
 }
+
+void renderOledMessage(const char* message) {
+  if (!oledReady) {
+    return;
+  }
+
+  oled.clearDisplay();
+  oled.setTextSize(1);
+  oled.setTextColor(SH110X_WHITE);
+  oled.setTextWrap(true);
+  oled.setCursor(0, 0);
+  oled.println("WS event:");
+  oled.println(message);
+  oled.display();
+}
 }  // namespace
 
 void setup() {
@@ -167,6 +189,20 @@ void setup() {
   state.clock = clockService.now();
   dashboard.render(state, true);
 
+    Wire.begin(kOledSdaPin, kOledSclPin);
+    if (oled.begin(kOledAddressPrimary, true)) {
+      Serial.printf("[OLED] Ready at 0x%02X\n", kOledAddressPrimary);
+      oledReady = true;
+    } else if (oled.begin(kOledAddressSecondary, true)) {
+      Serial.printf("[OLED] Ready at 0x%02X\n", kOledAddressSecondary);
+      oledReady = true;
+    } else {
+      Serial.println("[OLED] init failed");
+    }
+    if (oledReady) {
+      renderOledMessage("Waiting for ws...");
+    }
+
   restSync.begin(kSyncServerHost, kSyncServerPort);
   restSync.fetchSummary(state.tasks, state.habits);
   syncSocket.begin(kSyncServerHost, kSyncServerPort, kDeviceFirmwareVersion);
@@ -191,6 +227,9 @@ void loop() {
     if (restSync.fetchSummary(state.tasks, state.habits)) {
       lastSummaryMs = now;
     }
+  }
+  if (syncSocket.consumeTestMessage(oledMessage, sizeof(oledMessage))) {
+    renderOledMessage(oledMessage);
   }
   if ((now - lastSummaryMs) >= SUMMARY_REFRESH_MS) {
     lastSummaryMs = now;

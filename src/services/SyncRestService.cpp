@@ -38,7 +38,7 @@ bool SyncRestService::checkHealth() {
   return ok;
 }
 
-bool SyncRestService::fetchSummary(DashboardProgress& tasks, DashboardProgress& habits) {
+bool SyncRestService::fetchSummary(DashboardState& state) {
   if (host_ == nullptr || port_ == 0U) {
     return false;
   }
@@ -57,11 +57,11 @@ bool SyncRestService::fetchSummary(DashboardProgress& tasks, DashboardProgress& 
 
   const String payload = http.getString();
   http.end();
-  return parseSummary(payload, tasks, habits);
+  return parseSummary(payload, state);
 }
 
-bool SyncRestService::parseSummary(const String& payload, DashboardProgress& tasks, DashboardProgress& habits) {
-  StaticJsonDocument<256> doc;
+bool SyncRestService::parseSummary(const String& payload, DashboardState& state) {
+  StaticJsonDocument<384> doc;
   const DeserializationError error = deserializeJson(doc, payload);
   if (error) {
     return false;
@@ -69,16 +69,21 @@ bool SyncRestService::parseSummary(const String& payload, DashboardProgress& tas
 
   const JsonVariant tasksNode = doc["tasks"];
   const JsonVariant habitsNode = doc["habits"];
+  const JsonVariant pomodoroNode = doc["pomodoro"];
   if (!tasksNode.is<JsonObject>()) {
     return false;
   }
 
-  tasks.completed = tasksNode["completed"].as<uint8_t>();
-  tasks.total = tasksNode["total"].as<uint8_t>();
+  state.tasks.completed = tasksNode["completed"].as<uint8_t>();
+  state.tasks.total = tasksNode["total"].as<uint8_t>();
 
   if (habitsNode.is<JsonObject>()) {
-    habits.completed = habitsNode["completed"].as<uint8_t>();
-    habits.total = habitsNode["total"].as<uint8_t>();
+    state.habits.completed = habitsNode["completed"].as<uint8_t>();
+    state.habits.total = habitsNode["total"].as<uint8_t>();
+  }
+
+  if (pomodoroNode.is<JsonObject>()) {
+    state.sessionCount = pomodoroNode["completed"].as<uint8_t>();
   }
 
   return true;

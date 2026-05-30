@@ -4,6 +4,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <ESPmDNS.h>
+#include <LittleFS.h>
 
 #include "config.h"
 #include "models/DashboardState.h"
@@ -13,6 +14,8 @@
 #include "services/WiFiTimeService.h"
 #include "services/NavigationService.h"
 #include "services/InputService.h"
+#include "services/LocalFirstSyncService.h"
+#include "services/PomodoroService.h"
 #include "ui/MainDashboardScreen.h"
 #include "ui/PomodoroScreen.h"
 #include "ui/TasksScreen.h"
@@ -27,11 +30,13 @@ ClockService clockService;
 SyncRestService restSync;
 SyncSocketService syncSocket;
 WiFiTimeService wifiTime;
+LocalFirstSyncService localSync;
+PomodoroService pomodoroService;
 
 DashboardState state{};
 
 MainDashboardScreen dashboard(tft, state);
-PomodoroScreen pomodoroScreen(tft, state);
+PomodoroScreen pomodoroScreen(tft, state, pomodoroService);
 TasksScreen tasksScreen(tft, state);
 HabitsScreen habitsScreen(tft, state);
 
@@ -99,27 +104,11 @@ void initializeDemoState() {
   state.habits.total = 5;
 
   state.focusRunning = false;
-  state.focusMinutesRemaining = 25;
-}
-
-void updateFocusTimer() {
-  if (!state.focusRunning) {
-    return;
-  }
-
-  const uint32_t now = millis();
-  if ((now - lastFocusMinuteMs) < FOCUS_TICK_MS) {
-    return;
-  }
-  lastFocusMinuteMs = now;
-
-  if (state.focusMinutesRemaining > 0) {
-    state.focusMinutesRemaining--;
-  }
-  if (state.focusMinutesRemaining == 0) {
-    state.focusRunning = false;
-    state.focusMinutesRemaining = 25;
-  }
+  state.focusMode = 0; // Focus mode
+  state.focusSecondsRemaining = 25 * 60;
+  strncpy(state.focusCategory, "General", sizeof(state.focusCategory) - 1);
+  state.focusCategory[sizeof(state.focusCategory) - 1] = '\0';
+  state.sessionCount = 0;
 }
 
 void handleSerialInput() {
@@ -128,9 +117,11 @@ void handleSerialInput() {
     switch (input) {
       case 'f':
       case 'F':
-        state.focusRunning = !state.focusRunning;
-        lastFocusMinuteMs = millis();
-        Serial.println(state.focusRunning ? "Focus session started" : "Focus session paused");
+        if (pomodoroService.isRunning()) {
+          pomodoroService.pause();
+        } else {
+          pomodoroService.start();
+        }
         break;
       case '+':
         if (state.tasks.completed < state.tasks.total) {
@@ -178,6 +169,13 @@ void renderOledMessage(const char* message) {
 
 void setup() {
   Serial.begin(115200);
+
+  // Initialize LittleFS for local-first sync queue persistence
+  if (!LittleFS.begin(true)) {
+    Serial.println("[Main] LittleFS Mount Failed!");
+  } else {
+    Serial.println("[Main] LittleFS Mounted Successfully.");
+  }
 
   tft.init();
   tft.setRotation(1);
@@ -236,7 +234,12 @@ void setup() {
   }
 
   restSync.begin(kSyncServerHost, kSyncServerPort);
-  restSync.fetchSummary(state.tasks, state.habits);
+  restSync.fetchSummary(state);
+  
+  // Initialize local-first sync service and Pomodoro engine
+  localSync.begin(kSyncServerHost, kSyncServerPort);
+  pomodoroService.begin(state, localSync);
+
   syncSocket.begin(kSyncServerHost, kSyncServerPort, kDeviceFirmwareVersion);
 
   Serial.println("DeskBuddy main screen ready");
@@ -248,7 +251,10 @@ void loop() {
   inputService.tick();
 
   handleSerialInput();
-  updateFocusTimer();
+  
+  // Tick sync queue and Pomodoro service
+  localSync.tick();
+  pomodoroService.tick();
 
   // Periodic NTP re-sync (every 6 hours) to correct millis() drift.
   wifiTime.tick();
@@ -259,7 +265,7 @@ void loop() {
   const uint32_t now = millis();
 
   if (syncSocket.consumeSummaryRefresh()) {
-    if (restSync.fetchSummary(state.tasks, state.habits)) {
+    if (restSync.fetchSummary(state)) {
       lastSummaryMs = now;
     }
   }
@@ -268,7 +274,7 @@ void loop() {
   }
   if ((now - lastSummaryMs) >= SUMMARY_REFRESH_MS) {
     lastSummaryMs = now;
-    restSync.fetchSummary(state.tasks, state.habits);
+    restSync.fetchSummary(state);
   }
 
 

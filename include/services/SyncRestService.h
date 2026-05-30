@@ -8,12 +8,12 @@ class SyncRestService {
  public:
   void begin(const char* host, uint16_t port);
   void tick();
-  bool fetchSummary(DashboardProgress& tasks, DashboardProgress& habits);
+  bool fetchSummary(DashboardState& state);
   bool isServerOnline() const { return serverOnline_; }
 
  private:
   bool checkHealth();
-  bool parseSummary(const String& payload, DashboardProgress& tasks, DashboardProgress& habits);
+  bool parseSummary(const String& payload, DashboardState& state);
 
   const char* host_ = nullptr;
   uint16_t port_ = 0U;

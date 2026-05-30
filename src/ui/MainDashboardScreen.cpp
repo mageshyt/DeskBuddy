@@ -88,7 +88,7 @@ bool MainDashboardScreen::shouldRedraw(const DashboardState &state, bool forceRe
   if (!sameProgress(state.habits, lastState_.habits)) {
     return true;
   }
-  if (state.focusRunning != lastState_.focusRunning || state.focusMinutesRemaining != lastState_.focusMinutesRemaining) {
+  if (state.focusRunning != lastState_.focusRunning || state.focusSecondsRemaining != lastState_.focusSecondsRemaining) {
     return true;
   }
   return false;
@@ -116,7 +116,7 @@ void MainDashboardScreen::render(const DashboardState &state, bool forceRedraw) 
   const bool tasksChanged = !sameProgress(state.tasks, lastState_.tasks);
   const bool habitsChanged = !sameProgress(state.habits, lastState_.habits);
   const bool focusChanged =
-      (state.focusRunning != lastState_.focusRunning) || (state.focusMinutesRemaining != lastState_.focusMinutesRemaining);
+      (state.focusRunning != lastState_.focusRunning) || (state.focusSecondsRemaining != lastState_.focusSecondsRemaining);
 
 
   if (clockChanged) {
@@ -292,7 +292,7 @@ void MainDashboardScreen::drawBottomCardsDynamic(const DashboardState &state) co
   tft_.fillRect(focusX + 8, y + 80, focusW - 16, 18, card);
   char focusText[20];
   if (state.focusRunning) {
-    snprintf(focusText, sizeof(focusText), "%u min left", state.focusMinutesRemaining);
+    snprintf(focusText, sizeof(focusText), "%u:%02u left", state.focusSecondsRemaining / 60, state.focusSecondsRemaining % 60);
   } else {
     snprintf(focusText, sizeof(focusText), "Not started");
   }

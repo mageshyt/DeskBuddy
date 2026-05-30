@@ -19,6 +19,12 @@ void LocalFirstSyncService::begin(const char* host, uint16_t port) {
   } else {
     Serial.printf("[Sync] Loaded %u pending events from flash.\n", queueSize_);
   }
+
+  if (!loadIdMap()) {
+    Serial.println("[Sync] No existing ID map found or failed to load. Starting fresh.");
+  } else {
+    Serial.printf("[Sync] Loaded %u ID mappings from flash.\n", idMapSize_);
+  }
 }
 
 String LocalFirstSyncService::queueEvent(String method, String url, String payload, String dependsOnUuid) {
@@ -27,9 +33,9 @@ String LocalFirstSyncService::queueEvent(String method, String url, String paylo
     return "";
   }
   
-  // Generate a random client UUID (simple pseudorandom)
+  // Generate a unique client UUID using ESP32 hardware RNG
   char uuidBuf[16];
-  snprintf(uuidBuf, sizeof(uuidBuf), "c-%08x", (unsigned int)random(0xFFFFFFFF));
+  snprintf(uuidBuf, sizeof(uuidBuf), "c-%08x", (unsigned int)esp_random());
   String uuid = String(uuidBuf);
   
   SyncEvent ev;
@@ -69,6 +75,7 @@ void LocalFirstSyncService::addIdMapping(const String& uuid, int serverId) {
   }
   idMap_[idMapSize_++] = {uuid, serverId};
   Serial.printf("[Sync] Map client UUID %s -> Server ID %d\n", uuid.c_str(), serverId);
+  saveIdMap();
 }
 
 void LocalFirstSyncService::clearQueue() {
@@ -113,6 +120,26 @@ void LocalFirstSyncService::processNextEvent() {
   // Resolve URL placeholders (like {id}) if they depend on an earlier UUID
   String finalUrl = resolveUrlTemplate(ev.url, ev.dependsOnUuid);
   if (finalUrl.indexOf("{id}") != -1) {
+    // Check if the parent UUID exists in the queue or ID map
+    int serverId = resolveId(ev.dependsOnUuid);
+    bool parentExists = (serverId != -1) || isUuidInQueue(ev.dependsOnUuid);
+    
+    if (!parentExists) {
+      // The parent event is gone and was never resolved. We must discard this event to avoid deadlock.
+      Serial.printf("[Sync] Event %s blocked on missing/unresolved parent UUID %s. Discarding to prevent deadlock.\n", 
+                    ev.uuid.c_str(), ev.dependsOnUuid.c_str());
+      discardDependentEvents(ev.uuid);
+      
+      // Remove from queue (shift remaining left)
+      for (size_t i = 1; i < queueSize_; ++i) {
+        queue_[i - 1] = queue_[i];
+      }
+      queueSize_--;
+      saveQueue();
+      processing_ = false;
+      return;
+    }
+
     // Still waiting for parent POST request ID mapping
     Serial.printf("[Sync] Event %s blocked on parent UUID %s resolution. Waiting.\n", 
                   ev.uuid.c_str(), ev.dependsOnUuid.c_str());
@@ -322,4 +349,64 @@ void LocalFirstSyncService::discardDependentEvents(const String& uuid) {
       ++i;
     }
   }
+}
+
+bool LocalFirstSyncService::isUuidInQueue(const String& uuid) const {
+  for (size_t i = 0; i < queueSize_; ++i) {
+    if (queue_[i].uuid == uuid) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool LocalFirstSyncService::saveIdMap() {
+  File file = LittleFS.open(kIdMapFilePath, "w");
+  if (!file) {
+    Serial.println("[Sync] Failed to open ID map file for writing!");
+    return false;
+  }
+  
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  
+  for (size_t i = 0; i < idMapSize_; ++i) {
+    JsonObject obj = arr.add<JsonObject>();
+    obj["uuid"] = idMap_[i].uuid;
+    obj["id"] = idMap_[i].serverId;
+  }
+  
+  serializeJson(doc, file);
+  file.close();
+  return true;
+}
+
+bool LocalFirstSyncService::loadIdMap() {
+  if (!LittleFS.exists(kIdMapFilePath)) {
+    return false;
+  }
+  
+  File file = LittleFS.open(kIdMapFilePath, "r");
+  if (!file) {
+    return false;
+  }
+  
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, file);
+  file.close();
+  
+  if (err) {
+    Serial.printf("[Sync] ID map JSON Deserialization error: %s\n", err.c_str());
+    return false;
+  }
+  
+  JsonArray arr = doc.as<JsonArray>();
+  idMapSize_ = 0;
+  
+  for (JsonObject obj : arr) {
+    if (idMapSize_ >= kMaxIdMapEntries) break;
+    idMap_[idMapSize_++] = {obj["uuid"].as<String>(), obj["id"].as<int>()};
+  }
+  
+  return true;
 }

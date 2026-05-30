@@ -32,11 +32,15 @@ class LocalFirstSyncService {
  private:
   bool loadQueue();
   bool saveQueue();
+  bool loadIdMap();
+  bool saveIdMap();
+  bool isUuidInQueue(const String& uuid) const;
   void processNextEvent();
   void discardDependentEvents(const String& uuid);
   String resolveHostIp(const char* host);
   
   static constexpr const char* kQueueFilePath = "/sync_queue.json";
+  static constexpr const char* kIdMapFilePath = "/id_map.json";
   static constexpr size_t kMaxEvents = 50;
   
   SyncEvent queue_[kMaxEvents];

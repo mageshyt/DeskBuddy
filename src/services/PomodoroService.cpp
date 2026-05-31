@@ -79,7 +79,12 @@ void PomodoroService::reset() {
   
   state_->focusRunning = false;
   state_->focusSecondsRemaining = secondsRemaining_;
-  Serial.println("[Pomodoro] Reset to default duration");
+  
+  if (state_) {
+    state_->activeTaskId = -1;
+    state_->activeTaskTitle[0] = '\0';
+  }
+  Serial.println("[Pomodoro] Reset to default duration and cleared active task");
 }
 
 void PomodoroService::setCategory(const char* category) {
@@ -108,6 +113,13 @@ void PomodoroService::handleComplete() {
   state_->focusRunning = false;
   
   queueCompleteEvent();
+
+  if (currentMode_ == PomodoroMode::Focus) {
+    if (state_) {
+      state_->activeTaskId = -1;
+      state_->activeTaskTitle[0] = '\0';
+    }
+  }
   
   // Shift modes
   if (currentMode_ == PomodoroMode::Focus) {
@@ -165,6 +177,9 @@ void PomodoroService::queueStartEvent() {
   if (currentMode_ == PomodoroMode::Focus) {
     doc["type"] = "focus";
     doc["category"] = category_;
+    if (state_ && state_->activeTaskId != -1) {
+      doc["taskId"] = state_->activeTaskId;
+    }
   } else if (currentMode_ == PomodoroMode::ShortBreak) {
     doc["type"] = "short_break";
     doc["category"] = "Break";

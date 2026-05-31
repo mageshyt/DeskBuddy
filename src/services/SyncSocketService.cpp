@@ -78,7 +78,11 @@ void SyncSocketService::onEvent(WStype_t type, uint8_t* payload, size_t length) 
       Serial.printf("[ws] event: %s\n", typeValue);
       if (strcmp(typeValue, "task:created") == 0 ||
           strcmp(typeValue, "task:updated") == 0 ||
-          strcmp(typeValue, "task:deleted") == 0) {
+          strcmp(typeValue, "task:deleted") == 0 ||
+          strcmp(typeValue, "habit:updated") == 0 ||
+          strcmp(typeValue, "pomodoro:started") == 0 ||
+          strcmp(typeValue, "pomodoro:completed") == 0 ||
+          strcmp(typeValue, "pomodoro:abandoned") == 0) {
         summaryRefreshPending_ = true;
       }
       if (strcmp(typeValue, "test:event") == 0) {

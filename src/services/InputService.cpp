@@ -128,11 +128,26 @@ void InputService::tick() {
   const bool swPressed = (digitalRead(kRotarySwPin) == LOW);
   const uint32_t now = millis();
 
-  if (swPressed && prevRotarySw_ == HIGH &&
-      (now - lastRotaryBtnMs_) > 250) {
-    Serial.println("[Input] ENCODER PRESS");
-    nav_.injectEvent(InputEvent::ENCODER_PRESS);
-    lastRotaryBtnMs_ = now;
+  if (swPressed) {
+    if (prevRotarySw_ == HIGH) {
+      // Button just pressed
+      rotaryBtnPressStartMs_ = now;
+      rotaryBtnLongPressedSent_ = false;
+    } else if (!rotaryBtnLongPressedSent_ && (now - rotaryBtnPressStartMs_ > 600)) {
+      // Held down for > 600ms
+      Serial.println("[Input] ENCODER LONG PRESS");
+      nav_.injectEvent(InputEvent::ENCODER_LONG_PRESS);
+      rotaryBtnLongPressedSent_ = true;
+    }
+  } else {
+    if (prevRotarySw_ == LOW) {
+      // Button just released
+      if (!rotaryBtnLongPressedSent_ && (now - lastRotaryBtnMs_ > 250)) {
+        Serial.println("[Input] ENCODER PRESS");
+        nav_.injectEvent(InputEvent::ENCODER_PRESS);
+        lastRotaryBtnMs_ = now;
+      }
+    }
   }
   prevRotarySw_ = swPressed ? LOW : HIGH;
 }

@@ -33,6 +33,7 @@ void PomodoroScreen::onEnter() {
   lastSecs_ = 9999;
   lastCategory_[0] = '\0';
   lastSessionCount_ = 99;
+  lastActiveTaskId_ = -99;
   lastPickerMode_ = inPickerMode_;
   lastSelectedCategoryIndex_ = -1;
   lastCancelConfirm_ = false;
@@ -228,6 +229,7 @@ void PomodoroScreen::loop() {
   bool secondsChanged = (state_.focusSecondsRemaining != lastSecs_);
   bool categoryChanged = (strcmp(state_.focusCategory, lastCategory_) != 0);
   bool sessionsChanged = (state_.sessionCount != lastSessionCount_);
+  bool taskChanged = (state_.activeTaskId != lastActiveTaskId_);
 
   if (modeChanged || runningChanged || secondsChanged) {
     drawTimerSection(modeChanged || runningChanged);
@@ -236,13 +238,14 @@ void PomodoroScreen::loop() {
     lastSecs_ = state_.focusSecondsRemaining;
   }
 
-  if (modeChanged || runningChanged || categoryChanged || sessionsChanged) {
-    drawRightPanel(modeChanged || runningChanged || categoryChanged || sessionsChanged);
+  if (modeChanged || runningChanged || categoryChanged || sessionsChanged || taskChanged) {
+    drawRightPanel(modeChanged || runningChanged || categoryChanged || sessionsChanged || taskChanged);
     if (categoryChanged) {
       strncpy(lastCategory_, state_.focusCategory, sizeof(lastCategory_) - 1);
       lastCategory_[sizeof(lastCategory_) - 1] = '\0';
     }
     lastSessionCount_ = state_.sessionCount;
+    lastActiveTaskId_ = state_.activeTaskId;
   }
 }
 
@@ -412,8 +415,26 @@ void PomodoroScreen::drawRightPanel(bool force) const {
   tft_.setCursor(rx + 10, 222);
   tft_.print(sCountStr);
 
-  // Clear bottom area where instructions were previously drawn
-  tft_.fillRect(rx, 248, 170, 50, cardBg);
+  // Draw active task association at the bottom
+  if (state_.activeTaskId != -1) {
+    tft_.fillRoundRect(rx, 248, 170, 48, 6, rgb(8, 20, 42));
+    tft_.drawRoundRect(rx, 248, 170, 48, 6, rgb(20, 50, 95));
+    tft_.setTextColor(subText, rgb(8, 20, 42));
+    tft_.setTextSize(1);
+    tft_.setCursor(rx + 10, 254);
+    tft_.print("Active Task:");
+    
+    tft_.setTextColor(TFT_WHITE, rgb(8, 20, 42));
+    tft_.setTextSize(1);
+    tft_.setCursor(rx + 10, 274);
+    
+    char taskTitleBuf[22];
+    strncpy(taskTitleBuf, state_.activeTaskTitle, sizeof(taskTitleBuf) - 1);
+    taskTitleBuf[sizeof(taskTitleBuf) - 1] = '\0';
+    tft_.print(taskTitleBuf);
+  } else {
+    tft_.fillRect(rx, 248, 170, 50, cardBg);
+  }
 }
 
 void PomodoroScreen::drawCategoryPicker() const {

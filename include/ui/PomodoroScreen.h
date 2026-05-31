@@ -40,6 +40,7 @@ class PomodoroScreen : public IScreen {
   uint16_t lastSecs_ = 9999;
   char lastCategory_[20] = "";
   uint8_t lastSessionCount_ = 99;
+  int lastActiveTaskId_ = -99;
   bool lastPickerMode_ = false;
   int8_t lastSelectedCategoryIndex_ = -1;
   bool lastCancelConfirm_ = false;

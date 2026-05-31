@@ -26,4 +26,10 @@ struct DashboardState {
   uint16_t focusSecondsRemaining;   // Count down in seconds
   char focusCategory[20];          // Current selected category (e.g. "General")
   uint8_t sessionCount;            // Completed sessions today
+  int activeTaskId;                // -1 if none
+  char activeTaskTitle[48];        // Selected task title
+  uint32_t lastHabitsFetchMs;      // Timestamp of last habits fetch
+  uint32_t lastTasksFetchMs;       // Timestamp of last tasks fetch
+  bool habitsNeedRefetch;          // Invalidation flag
+  bool tasksNeedRefetch;           // Invalidation flag
 };

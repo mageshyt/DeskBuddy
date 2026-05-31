@@ -35,12 +35,12 @@ PomodoroService pomodoroService;
 
 DashboardState state{};
 
+NavigationService navigationService;
 MainDashboardScreen dashboard(tft, state);
 PomodoroScreen pomodoroScreen(tft, state, pomodoroService);
-TasksScreen tasksScreen(tft, state);
-HabitsScreen habitsScreen(tft, state);
+TasksScreen tasksScreen(tft, state, restSync, localSync, navigationService);
+HabitsScreen habitsScreen(tft, state, restSync, localSync);
 
-NavigationService navigationService;
 InputService inputService(navigationService);
 
 uint32_t lastRenderMs = 0;
@@ -270,6 +270,8 @@ void loop() {
   const uint32_t now = millis();
 
   if (syncSocket.consumeSummaryRefresh()) {
+    state.tasksNeedRefetch = true;
+    state.habitsNeedRefetch = true;
     if (restSync.fetchSummary(state)) {
       lastSummaryMs = now;
     }

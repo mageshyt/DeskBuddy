@@ -29,4 +29,6 @@ class InputService {
   // Rotary encoder button previous state
   bool prevRotarySw_ = HIGH;
   uint32_t lastRotaryBtnMs_ = 0;
+  uint32_t rotaryBtnPressStartMs_ = 0;
+  bool rotaryBtnLongPressedSent_ = false;
 };

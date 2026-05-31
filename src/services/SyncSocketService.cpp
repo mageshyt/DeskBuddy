@@ -68,7 +68,7 @@ void SyncSocketService::onEvent(WStype_t type, uint8_t* payload, size_t length) 
       raw[copyLen] = '\0';
       Serial.printf("[ws] rx: %s\n", raw);
 
-      StaticJsonDocument<256> doc;
+      StaticJsonDocument<2048> doc;
       const DeserializationError error = deserializeJson(doc, payload, length);
       if (error) {
         break;
@@ -87,10 +87,24 @@ void SyncSocketService::onEvent(WStype_t type, uint8_t* payload, size_t length) 
       }
       if (strcmp(typeValue, "test:event") == 0) {
         const char* message = doc["payload"]["message"] | "";
+        const uint32_t durationMs = doc["payload"]["durationMs"] | 30000;
         if (message[0] != '\0') {
-          Serial.printf("[ws] test:event message: %s\n", message);
+          Serial.printf("[ws] test:event message: %s (duration=%u)\n", message, durationMs);
           snprintf(lastTestMessage_, sizeof(lastTestMessage_), "%s", message);
+          testMessageDurationMs_ = durationMs;
           testMessagePending_ = true;
+        }
+      }
+      if (strcmp(typeValue, "oled:image") == 0) {
+        const char* base64 = doc["payload"]["image"] | "";
+        const bool persistent = doc["payload"]["persistent"] | true;
+        const uint32_t durationMs = doc["payload"]["durationMs"] | 30000;
+        if (base64[0] != '\0') {
+          Serial.printf("[ws] oled:image event received (persistent=%s, duration=%u)\n", persistent ? "true" : "false", durationMs);
+          snprintf(lastOledImageBase64_, sizeof(lastOledImageBase64_), "%s", base64);
+          oledImagePersistent_ = persistent;
+          oledImageDurationMs_ = durationMs;
+          oledImagePending_ = true;
         }
       }
       break;
@@ -109,13 +123,26 @@ bool SyncSocketService::consumeSummaryRefresh() {
   return true;
 }
 
-bool SyncSocketService::consumeTestMessage(char* buffer, size_t bufferSize) {
+bool SyncSocketService::consumeTestMessage(char* buffer, size_t bufferSize, uint32_t& durationMs) {
   if (!testMessagePending_ || bufferSize == 0) {
     return false;
   }
 
   snprintf(buffer, bufferSize, "%s", lastTestMessage_);
+  durationMs = testMessageDurationMs_;
   testMessagePending_ = false;
+  return true;
+}
+
+bool SyncSocketService::consumeOledImage(char* buffer, size_t bufferSize, bool& persistent, uint32_t& durationMs) {
+  if (!oledImagePending_ || bufferSize == 0) {
+    return false;
+  }
+
+  snprintf(buffer, bufferSize, "%s", lastOledImageBase64_);
+  persistent = oledImagePersistent_;
+  durationMs = oledImageDurationMs_;
+  oledImagePending_ = false;
   return true;
 }
 

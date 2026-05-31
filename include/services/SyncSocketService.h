@@ -9,7 +9,8 @@ class SyncSocketService {
   void tick();
   bool isConnected() const { return connected_; }
   bool consumeSummaryRefresh();
-  bool consumeTestMessage(char* buffer, size_t bufferSize);
+  bool consumeTestMessage(char* buffer, size_t bufferSize, uint32_t& durationMs);
+  bool consumeOledImage(char* buffer, size_t bufferSize, bool& persistent, uint32_t& durationMs);
 
  private:
   void sendStatus(bool connected);
@@ -25,6 +26,11 @@ class SyncSocketService {
   bool summaryRefreshPending_ = false;
   bool testMessagePending_ = false;
   char lastTestMessage_[96] = {0};
+  uint32_t testMessageDurationMs_ = 30000;
+  bool oledImagePending_ = false;
+  bool oledImagePersistent_ = false;
+  uint32_t oledImageDurationMs_ = 30000;
+  char lastOledImageBase64_[1500] = {0};
   const char* host_ = nullptr;
   uint16_t port_ = 0U;
   static constexpr uint32_t kHeartbeatIntervalMs = 10000U;

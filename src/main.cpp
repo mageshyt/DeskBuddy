@@ -20,12 +20,14 @@
 #include "ui/PomodoroScreen.h"
 #include "ui/TasksScreen.h"
 #include "ui/HabitsScreen.h"
+#include "services/OledService.h"
 
 namespace {
 const char *const kMonthNames[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 TFT_eSPI tft;
 Adafruit_SH1106G oled(128, 64, &Wire, -1);
+OledService oledService(oled);
 ClockService clockService;
 SyncRestService restSync;
 SyncSocketService syncSocket;
@@ -46,6 +48,9 @@ InputService inputService(navigationService);
 uint32_t lastRenderMs = 0;
 uint32_t lastFocusMinuteMs = 0;
 uint32_t lastSummaryMs = 0;
+uint32_t lastOledMessageMs = 0;
+uint32_t activeOledMessageTimeoutMs = 5000;
+const uint32_t OLED_MESSAGE_TIMEOUT_MS = 5000;
 
 bool oledReady = false;
 char oledMessage[96] = {0};
@@ -160,15 +165,14 @@ void renderOledMessage(const char* message) {
   if (!oledReady) {
     return;
   }
+  oledService.displayMessage("WS event:", message);
+}
 
-  oled.clearDisplay();
-  oled.setTextSize(1);
-  oled.setTextColor(SH110X_WHITE);
-  oled.setTextWrap(true);
-  oled.setCursor(0, 0);
-  oled.println("WS event:");
-  oled.println(message);
-  oled.display();
+void drawOledDefaultImage() {
+  if (!oledReady) {
+    return;
+  }
+  oledService.drawIdleImage();
 }
 }  // namespace
 
@@ -230,7 +234,7 @@ void setup() {
     Serial.println("[OLED] init failed");
   }
   if (oledReady) {
-    renderOledMessage("Waiting for ws...");
+    oledService.begin();
   }
 
   // Initialize hardware inputs via InputService after Wire (I2C) is ready
@@ -276,8 +280,22 @@ void loop() {
       lastSummaryMs = now;
     }
   }
-  if (syncSocket.consumeTestMessage(oledMessage, sizeof(oledMessage))) {
+  uint32_t msgDuration = 30000;
+  if (syncSocket.consumeTestMessage(oledMessage, sizeof(oledMessage), msgDuration)) {
     renderOledMessage(oledMessage);
+    lastOledMessageMs = now;
+    activeOledMessageTimeoutMs = msgDuration;
+  }
+  
+  static char base64ImageBuf[1500];
+  bool isPersistent = false;
+  uint32_t imgDuration = 30000;
+  if (syncSocket.consumeOledImage(base64ImageBuf, sizeof(base64ImageBuf), isPersistent, imgDuration)) {
+    oledService.handleImageEvent(base64ImageBuf, isPersistent);
+    if (!isPersistent) {
+      lastOledMessageMs = now;
+      activeOledMessageTimeoutMs = imgDuration;
+    }
   }
   if ((now - lastSummaryMs) >= SUMMARY_REFRESH_MS) {
     lastSummaryMs = now;
@@ -296,4 +314,10 @@ void loop() {
 
   // Tick the active screen's update and rendering loop
   navigationService.loop();
+
+  // If a temporary text message is active, restore the default idle image after timeout
+  if (lastOledMessageMs != 0 && (now - lastOledMessageMs) >= activeOledMessageTimeoutMs) {
+    lastOledMessageMs = 0;
+    drawOledDefaultImage();
+  }
 }
